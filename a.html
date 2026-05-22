@@ -1,6 +1,3 @@
-
-
-
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -28,13 +25,11 @@ input,select{width:100%;padding:10px;border:1px solid #ccc;border-radius:6px;fon
 <body>
 <div class="box">
 <h2>流水號倒跳計算器</h2>
-
 <div class="item">
 <label>上次結束號碼(續印填寫)</label>
 <input type="number" id="lastEndNo" placeholder="空白預設從0001開始">
 <div class="tip">全新單子留空，續印填最後結束號</div>
 </div>
-
 <div class="item">
 <label>是否拆分兩批印刷</label>
 <select id="splitSel">
@@ -42,12 +37,10 @@ input,select{width:100%;padding:10px;border:1px solid #ccc;border-radius:6px;fon
 <option value="0">不分批一次性印完</option>
 </select>
 </div>
-
 <div class="item">
 <label>客戶需求本數</label>
-<input type="number" id="needCnt" value="200">
+<input type="number" id="needCnt" value="360">
 </div>
-
 <div class="item">
 <label>紙張類型</label>
 <select id="typeSel">
@@ -55,88 +48,92 @@ input,select{width:100%;padding:10px;border:1px solid #ccc;border-radius:6px;fon
 <option value="50" selected>非碳紙(1本=50號)</option>
 </select>
 </div>
-
 <div class="item">
 <label>一版幾模</label>
-<input type="number" id="moCnt" value="6">
+<input type="number" id="moCnt" value="3">
 </div>
-
 <button class="btn" onclick="runCalc()">開始計算</button>
 <div class="res" id="showRes"></div>
 </div>
 
 <script>
+// 4位補零
 function pad4(n){
 return String(n).padStart(4,'0');
 }
 
-function getModList(maxNum, perMod, totalMod, startBase){
-let arr = [];
-let curr = maxNum;
-for(let i=1;i<=totalMod;i++){
-let end = curr - perMod + 1;
-arr.push({s:curr, e:end});
-curr = end - 1;
+// 按区间倒切模号，返回每模 起始大號,結尾小號
+function cutReverseBlock(maxNo, blockNum, modCnt){
+let res = [];
+let perMod = blockNum / modCnt;
+let currMax = maxNo;
+for(let i=0; i<modCnt; i++){
+let nextMax = currMax - perMod;
+let segEnd = nextMax + 1;
+res.push({s:currMax, e:segEnd});
+currMax = nextMax;
 }
-return arr;
+return res;
 }
 
 function runCalc(){
-let lastEnd = document.getElementById('lastEndNo').value.trim();
+let lastEndVal = document.getElementById('lastEndNo').value.trim();
 let isSplit = parseInt(document.getElementById('splitSel').value);
-let needBook = parseInt(document.getElementById('needCnt').value);
+let needBook = parseInt(document.getElementById('needCnt').value) || 0;
 let perBookNo = parseInt(document.getElementById('typeSel').value);
-let mod = parseInt(document.getElementById('moCnt').value);
+let mod = parseInt(document.getElementById('moCnt').value) || 1;
 
-// 起始號
-let startBase = lastEnd === "" ? 1 : (parseInt(lastEnd) + 1);
+if(needBook <=0 || mod <=0){
+document.getElementById('showRes').innerHTML = '<span class="redtxt">請輸入大於0的有效數值</span>';
+return;
+}
 
-// 補整為模數倍數
+// 初始起始號
+let baseStart = lastEndVal === "" ? 1 : (parseInt(lastEndVal)+1);
+// 本數補整為模數倍數
 let rem = needBook % mod;
-let totalPrintBook = rem === 0 ? needBook : needBook + (mod - rem);
-let totalAllNo = totalPrintBook * perBookNo;
-let perModNum = totalAllNo / mod;
+let realBook = rem === 0 ? needBook : needBook + (mod - rem);
+let totalAllNo = realBook * perBookNo;
+let totalMaxNo = baseStart + totalAllNo - 1;
 
 let html = `<strong>📋 基礎資訊</strong><br>`;
-html += `接續起始號：${pad4(startBase)}<br>`;
-html += `需求本數：${needBook} 本｜補整實印：${totalPrintBook} 本<br>`;
-html += `單本號數：${perBookNo}｜單模號數：${perModNum}<br>`;
+html += `接續起始號：${pad4(baseStart)}<br>`;
+html += `需求本數：${needBook} 本｜補整實印：${realBook} 本<br>`;
+html += `單本號數：${perBookNo}<br>`;
+html += `整體最大流水號：${pad4(totalMaxNo)}<br>`;
 html += `每版固定 ${mod} 模｜印刷方式：${isSplit?'拆分兩批':'一次性全印'}<hr>`;
 
 if(isSplit === 0){
-// 不分批 一次性印完
-let endAll = startBase + totalAllNo - 1;
-let maxCurr = endAll;
-let list = getModList(maxCurr, perModNum, mod);
-html += `<div class="batch1"><strong class="greentxt">整批一次性印刷</strong>（${pad4(startBase)} ~ ${endAll}）<br>`;
+// 不分批 整體倒切
+let list = cutReverseBlock(totalMaxNo, totalAllNo, mod);
+html += `<div class="batch1"><strong class="greentxt">整批一次性印刷</strong>（${pad4(baseStart)} ~ ${pad4(totalMaxNo)}）<br>`;
 list.forEach((item,idx)=>{
-html += `第${idx+1}模：${item.s} ＞ ${pad4(item.e)}<br>`;
+html += `第${idx+1}模：${pad4(item.s)} ＞ ${pad4(item.e)}<br>`;
 });
 html += `</div>`;
 }else{
-// 分批 均分兩批
-let splitBook = totalPrintBook / 2;
-let oneBatchNo = splitBook * perBookNo;
+// 分批：均分兩段號數
+let halfNo = totalAllNo / 2;
+// 第一批：後段小號區間
+let batch1Max = baseStart + halfNo - 1;
+let list1 = cutReverseBlock(batch1Max, halfNo, mod);
+// 第二批：前段大號區間
+let batch2Min = batch1Max + 1;
+let list2 = cutReverseBlock(totalMaxNo, halfNo, mod);
 
-// 第一批
-let b1End = startBase + oneBatchNo - 1;
-let list1 = getModList(b1End, perModNum, mod);
-html += `<div class="batch1"><strong class="greentxt">第一批 ${splitBook} 本</strong>（${pad4(startBase)} ~ ${b1End}）<br>`;
+html += `<div class="batch1"><strong class="greentxt">第一批 ${realBook/2} 本</strong>（${pad4(baseStart)} ~ ${pad4(batch1Max)}）<br>`;
 list1.forEach((item,idx)=>{
-html += `第${idx+1}模：${item.s} ＞ ${pad4(item.e)}<br>`;
+html += `第${idx+1}模：${pad4(item.s)} ＞ ${pad4(item.e)}<br>`;
 });
 html += `</div>`;
 
-// 第二批
-let b2Start = b1End + 1;
-let b2End = b1End + oneBatchNo;
-let list2 = getModList(b2End, perModNum, mod);
-html += `<div class="batch2"><strong class="redtxt">第二批 ${splitBook} 本</strong>（${b2Start} ~ ${b2End}）<br>`;
+html += `<div class="batch2"><strong class="redtxt">第二批 ${realBook/2} 本</strong>（${pad4(batch2Min)} ~ ${pad4(totalMaxNo)}）<br>`;
 list2.forEach((item,idx)=>{
-html += `第${idx+1}模：${item.s} ＞ ${pad4(item.e)}<br>`;
+html += `第${idx+1}模：${pad4(item.s)} ＞ ${pad4(item.e)}<br>`;
 });
 html += `</div>`;
 }
+
 document.getElementById('showRes').innerHTML = html;
 }
 </script>
